@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from numbers import Real
 
 from trace_ml.verification import failure_types as FT
+from trace_ml.verification.numeric import finite_float, stable_midpoint
+from trace_ml.verification.numeric import stable_mean as _mean
+from trace_ml.verification.numeric import stable_population_std as _population_std
+from trace_ml.verification.numeric import within_tolerance as _matches
 from trace_ml.verification.seedset_checks import (
     COMPARISON_AGGREGATIONS,
     TOLERANCE,
@@ -39,35 +42,18 @@ def _singleton_or_list(values):
     return ordered
 
 
-def _mean(values):
-    if not values:
-        return None
-    count = len(values)
-    return math.fsum(value / count for value in values)
-
-
 def _median(values):
     if not values:
         return None
     ordered = sorted(values)
     midpoint = len(ordered) // 2
     if len(ordered) % 2:
-        return ordered[midpoint]
-    return (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
-
-
-def _population_std(values):
-    if not values:
-        return None
-    if len(values) == 1:
-        return 0.0
-    mean = _mean(values)
-    result = math.hypot(*(value - mean for value in values)) / math.sqrt(len(values))
-    return result if math.isfinite(result) else None
+        return float(ordered[midpoint])
+    return stable_midpoint(ordered[midpoint - 1], ordered[midpoint])
 
 
 def _is_finite_number(value) -> bool:
-    return isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(float(value))
+    return finite_float(value) is not None
 
 
 def _is_nonnegative_int(value) -> bool:
@@ -381,7 +367,7 @@ def _check_baseline_evidence(claim: dict, baseline_runs: list) -> dict | None:
 
     baseline_mean = _mean([float(run["metric_value"]) for run in baseline_runs])
     stated_value = claim.get("true_baseline_value")
-    if stated_value is not None and abs(stated_value - baseline_mean) >= TOLERANCE:
+    if stated_value is not None and not _matches(stated_value, baseline_mean, TOLERANCE):
         return {
             "failure_type": FT.STALE_BASELINE,
             "rationale": (
@@ -466,17 +452,17 @@ def compute_evidence(claim: dict, runs: list, baseline_runs: list | None = None)
         and _is_finite_number(claimed_value)
         and computed_comparison_value is not None
         and math.isfinite(computed_comparison_value)
-        and abs(claimed_value - computed_comparison_value) < TOLERANCE
+        and _matches(claimed_value, computed_comparison_value, TOLERANCE)
     ):
         aggregation_computed = aggregation_claimed
     elif values and _is_finite_number(claimed_value):
-        if computed_mean is not None and abs(claimed_value - computed_mean) < TOLERANCE:
+        if computed_mean is not None and _matches(claimed_value, computed_mean, TOLERANCE):
             aggregation_computed = "mean"
-        elif computed_max is not None and abs(claimed_value - computed_max) < TOLERANCE:
+        elif computed_max is not None and _matches(claimed_value, computed_max, TOLERANCE):
             aggregation_computed = "best"
-        elif computed_min is not None and abs(claimed_value - computed_min) < TOLERANCE:
+        elif computed_min is not None and _matches(claimed_value, computed_min, TOLERANCE):
             aggregation_computed = "worst"
-        elif any(abs(claimed_value - value) < TOLERANCE for value in values):
+        elif any(_matches(claimed_value, value, TOLERANCE) for value in values):
             aggregation_computed = "single_seed"
         else:
             aggregation_computed = "none"

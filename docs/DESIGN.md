@@ -18,7 +18,7 @@ The verifier rejects malformed or ambiguous records before applying semantic che
 
 ## Numerical comparisons
 
-The default absolute tolerance is strictly below `5e-5`: half of one unit in the fourth decimal place. A caller with different precision requirements should wrap the verifier with a domain-specific policy instead of silently changing the global rule. Means use numerically stable summation, and input records are canonicalized by run ID before verification so output does not depend on ledger order.
+For ordinary ML-scale metrics, the comparison threshold is `5e-5`: half of one unit in the fourth decimal place. At very large magnitudes, the verifier also allows a small two-ULP representation margin so values are not rejected solely because IEEE-754 cannot represent the same mathematical result bit-for-bit. Inputs that cannot be represented as finite Python floats return `insufficient_evidence`. Means and population standard deviations use scale-normalized arithmetic, and input records are canonicalized by run ID before verification so output does not depend on ledger order.
 
 ## Extending the verifier
 

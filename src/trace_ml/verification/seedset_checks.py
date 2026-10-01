@@ -5,6 +5,10 @@ from __future__ import annotations
 import math
 
 from trace_ml.verification import failure_types as FT
+from trace_ml.verification.numeric import stable_mean as _mean
+from trace_ml.verification.numeric import stable_midpoint
+from trace_ml.verification.numeric import stable_population_std as _population_std
+from trace_ml.verification.numeric import within_tolerance as _matches
 
 TOLERANCE = 5e-5
 
@@ -15,29 +19,12 @@ def _failure(failure_type: str, rationale: str) -> dict:
     return {"failure_type": failure_type, "rationale": rationale}
 
 
-def _mean(values):
-    if not values:
-        return None
-    count = len(values)
-    return math.fsum(value / count for value in values)
-
-
 def _median(values):
     ordered = sorted(values)
     midpoint = len(ordered) // 2
     if len(ordered) % 2:
         return ordered[midpoint]
-    return (ordered[midpoint - 1] + ordered[midpoint]) / 2.0
-
-
-def _population_std(values):
-    if not values:
-        return None
-    if len(values) == 1:
-        return 0.0
-    mean = _mean(values)
-    result = math.hypot(*(value - mean for value in values)) / math.sqrt(len(values))
-    return result if math.isfinite(result) else None
+    return stable_midpoint(ordered[midpoint - 1], ordered[midpoint])
 
 
 def _values_by_seed(runs):
@@ -263,9 +250,9 @@ def check_aggregation_correctness(claim, runs):
     if claimed_value is None:
         matches_mean = matches_best = matches_worst = False
     else:
-        matches_mean = abs(claimed_value - true_mean) < TOLERANCE
-        matches_best = abs(claimed_value - best_value) < TOLERANCE
-        matches_worst = abs(claimed_value - worst_value) < TOLERANCE
+        matches_mean = _matches(claimed_value, true_mean, TOLERANCE)
+        matches_best = _matches(claimed_value, best_value, TOLERANCE)
+        matches_worst = _matches(claimed_value, worst_value, TOLERANCE)
 
     if claimed_aggregation == "mean":
         if matches_mean:
@@ -282,7 +269,7 @@ def check_aggregation_correctness(claim, runs):
                 f"Claim reports {claimed_value:.4f} as the mean, but it matches the "
                 f"worst seed rather than the true mean {true_mean:.4f}.",
             )
-        if any(abs(claimed_value - value) < TOLERANCE for value in values):
+        if any(_matches(claimed_value, value, TOLERANCE) for value in values):
             return _failure(
                 FT.AGGREGATION_MISMATCH,
                 f"Claim reports {claimed_value:.4f} as the mean, but it matches a "
@@ -315,7 +302,7 @@ def check_aggregation_correctness(claim, runs):
 
     if claimed_aggregation == "median":
         true_median = _median(values)
-        if abs(claimed_value - true_median) < TOLERANCE:
+        if _matches(claimed_value, true_median, TOLERANCE):
             return None
         return _failure(
             FT.AGGREGATION_MISMATCH,
@@ -330,7 +317,7 @@ def check_aggregation_correctness(claim, runs):
                 FT.INSUFFICIENT_EVIDENCE,
                 "Population standard deviation is not representable as a finite float.",
             )
-        if abs(claimed_value - true_std) < TOLERANCE:
+        if _matches(claimed_value, true_std, TOLERANCE):
             return None
         return _failure(
             FT.AGGREGATION_MISMATCH,
@@ -347,8 +334,8 @@ def check_aggregation_correctness(claim, runs):
                 "Range claims require both claimed_low_value and claimed_high_value.",
             )
 
-        low_ok = abs(low - worst_value) < TOLERANCE
-        high_ok = abs(high - best_value) < TOLERANCE
+        low_ok = _matches(low, worst_value, TOLERANCE)
+        high_ok = _matches(high, best_value, TOLERANCE)
         if low_ok and high_ok:
             return None
 
@@ -379,7 +366,7 @@ def check_aggregation_correctness(claim, runs):
         problems = []
         if not matches_mean:
             problems.append(f"mean component {claimed_value:.4f} (actual mean {true_mean:.4f})")
-        if abs(uncertainty - true_std) >= TOLERANCE:
+        if not _matches(uncertainty, true_std, TOLERANCE):
             problems.append(
                 f"std component {uncertainty:.4f} (actual population std {true_std:.4f})"
             )
@@ -411,7 +398,7 @@ def check_aggregation_correctness(claim, runs):
                 f"Seed {seed_id} has conflicting metric values {sorted(unique_values)} "
                 "across multiple run records.",
             )
-        if abs(claimed_value - matching_values[0]) < TOLERANCE:
+        if _matches(claimed_value, matching_values[0], TOLERANCE):
             return None
         return _failure(
             FT.AGGREGATION_MISMATCH,
@@ -451,7 +438,7 @@ def check_aggregation_correctness(claim, runs):
                 FT.INSUFFICIENT_EVIDENCE,
                 f"Computed {claimed_aggregation} is not finite for the supplied evidence.",
             )
-        if abs(claimed_value - true_value) < TOLERANCE:
+        if _matches(claimed_value, true_value, TOLERANCE):
             return None
         return _failure(
             FT.AGGREGATION_MISMATCH,

@@ -1,3 +1,5 @@
+import math
+
 from trace_ml.verification.verify_claim import verify
 
 
@@ -205,3 +207,49 @@ def test_unrepresentable_absolute_delta_does_not_leak_infinity():
     result = verify(claim, [method, baseline])
     assert result["verdict"] == "insufficient_evidence"
     assert result["evidence"]["computed_comparison_value"] is None
+
+
+def test_subnormal_mean_preserves_representable_value():
+    value = 5e-324
+    claim = {
+        **BASE,
+        "claimed_aggregation": "mean",
+        "claimed_value": value,
+    }
+    result = verify(
+        claim,
+        [run("a", value, seed=0), run("b", value, seed=1)],
+    )
+    assert result["verdict"] == "supported"
+    assert result["evidence"]["computed_mean"] == value
+
+
+def test_unrepresentable_json_number_returns_insufficient_instead_of_crashing():
+    claim = {
+        **BASE,
+        "claimed_aggregation": "mean",
+        "claimed_value": 0.0,
+    }
+    result = verify(claim, [run("huge", 10**400)])
+    assert result["verdict"] == "insufficient_evidence"
+    assert "finite number" in result["rationale"]
+
+
+def test_extreme_asymmetric_standard_deviation_remains_finite():
+    values = [1.79e308, -1.79e308, 1.79e308]
+    expected = 1.79e308 * ((8.0 / 9.0) ** 0.5)
+    claim = {
+        **BASE,
+        "claimed_aggregation": "std",
+        "claimed_value": expected,
+    }
+    result = verify(
+        claim,
+        [
+            run("a", values[0], seed=0),
+            run("b", values[1], seed=1),
+            run("c", values[2], seed=2),
+        ],
+    )
+    assert result["verdict"] == "supported"
+    assert math.isclose(result["evidence"]["computed_std"], expected, rel_tol=2e-16)
