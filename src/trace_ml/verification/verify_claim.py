@@ -58,11 +58,7 @@ def _population_std(values):
 
 
 def _is_finite_number(value) -> bool:
-    return (
-        isinstance(value, Real)
-        and not isinstance(value, bool)
-        and math.isfinite(float(value))
-    )
+    return isinstance(value, Real) and not isinstance(value, bool) and math.isfinite(float(value))
 
 
 def _is_nonnegative_int(value) -> bool:
@@ -121,13 +117,10 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
         count_value = claim.get(required_count_field)
         if count_value is None:
             problems.append(
-                f"claim missing required field '{required_count_field}' "
-                f"for count type {count_type}"
+                f"claim missing required field '{required_count_field}' for count type {count_type}"
             )
         elif not _is_nonnegative_int(count_value):
-            problems.append(
-                f"claim field '{required_count_field}' must be a non-negative integer"
-            )
+            problems.append(f"claim field '{required_count_field}' must be a non-negative integer")
 
     for field in ("claimed_seed_count", "claimed_run_count", "claimed_trial_count"):
         value = claim.get(field)
@@ -140,9 +133,7 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
             isinstance(run_id, str) and run_id for run_id in candidate_run_ids
         )
         if not valid_ids:
-            problems.append(
-                "claim field 'candidate_run_ids' must be a list of non-empty strings"
-            )
+            problems.append("claim field 'candidate_run_ids' must be a list of non-empty strings")
 
     required_run_fields = (
         "run_id",
@@ -189,9 +180,7 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
         seed = run.get("seed")
         if seed is not None:
             if isinstance(seed, bool) or not isinstance(seed, (int, str)):
-                problems.append(
-                    f"run[{index}] field 'seed' must be an integer or string"
-                )
+                problems.append(f"run[{index}] field 'seed' must be an integer or string")
             else:
                 seed_types.add(type(seed))
 
@@ -217,11 +206,7 @@ def compute_evidence(claim: dict, runs: list) -> dict:
     ]
 
     ledger_seeds = sorted(
-        {
-            run.get("seed")
-            for run in runs
-            if isinstance(run, dict) and run.get("seed") is not None
-        },
+        {run.get("seed") for run in runs if isinstance(run, dict) and run.get("seed") is not None},
         key=_sort_key,
     )
     ledger_run_ids = sorted(
@@ -341,9 +326,7 @@ def verify(
     validation_problems = _validate_inputs(claim, runs)
     evidence = compute_evidence(safe_claim, safe_runs)
     supporting_run_ids = [
-        run.get("run_id")
-        for run in safe_runs
-        if isinstance(run, dict) and run.get("run_id")
+        run.get("run_id") for run in safe_runs if isinstance(run, dict) and run.get("run_id")
     ]
 
     if validation_problems:
@@ -352,9 +335,7 @@ def verify(
             "failure_type": FT.INSUFFICIENT_EVIDENCE,
             "supporting_run_ids": supporting_run_ids,
             "evidence": evidence,
-            "rationale": "Input schema validation failed: "
-            + "; ".join(validation_problems)
-            + ".",
+            "rationale": "Input schema validation failed: " + "; ".join(validation_problems) + ".",
         }
 
     for check in active_checks:

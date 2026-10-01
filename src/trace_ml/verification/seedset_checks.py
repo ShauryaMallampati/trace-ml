@@ -36,11 +36,7 @@ def _values_by_seed(runs):
 
 
 def _conflicting_seed_values(runs):
-    return [
-        seed
-        for seed, values in _values_by_seed(runs).items()
-        if len(values) > 1
-    ]
+    return [seed for seed, values in _values_by_seed(runs).items() if len(values) > 1]
 
 
 def check_runs_exist(claim, runs):
@@ -353,9 +349,7 @@ def check_aggregation_correctness(claim, runs):
 
         problems = []
         if not matches_mean:
-            problems.append(
-                f"mean component {claimed_value:.4f} (actual mean {true_mean:.4f})"
-            )
+            problems.append(f"mean component {claimed_value:.4f} (actual mean {true_mean:.4f})")
         if abs(uncertainty - true_std) >= TOLERANCE:
             problems.append(
                 f"std component {uncertainty:.4f} (actual population std {true_std:.4f})"
@@ -375,17 +369,13 @@ def check_aggregation_correctness(claim, runs):
                 "single_seed requires claimed_seed_id.",
             )
 
-        matching_values = [
-            run["metric_value"] for run in runs if run["seed"] == seed_id
-        ]
+        matching_values = [run["metric_value"] for run in runs if run["seed"] == seed_id]
         if not matching_values:
             return _failure(
                 FT.INSUFFICIENT_EVIDENCE,
                 f"No run for seed {seed_id} exists among the candidate runs.",
             )
-        if any(
-            abs(claimed_value - value) < TOLERANCE for value in matching_values
-        ):
+        if any(abs(claimed_value - value) < TOLERANCE for value in matching_values):
             return None
         return _failure(
             FT.AGGREGATION_MISMATCH,
