@@ -14,12 +14,17 @@
     "status"
   ],
   "properties": {
-    "run_id": {"type": "string", "minLength": 1},
-    "dataset": {"type": "string", "minLength": 1},
-    "method": {"type": "string", "minLength": 1},
-    "seed": {"type": ["integer", "string"]},
-    "metric_name": {"type": "string", "minLength": 1},
-    "metric_split": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+    "dataset": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+    "method": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+    "seed": {
+      "oneOf": [
+        {"type": "integer"},
+        {"type": "string", "minLength": 1, "pattern": ".*\\S.*"}
+      ]
+    },
+    "metric_name": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+    "metric_split": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
     "metric_value": {"type": "number"},
     "status": {"enum": ["completed", "failed", "running"]},
     "experiment_group_id": {"type": "string"},

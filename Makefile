@@ -12,6 +12,7 @@ test:
 
 check:
 	python -m ruff check src tests
+	python -m ruff format --check src tests
 	python -m pytest
 
 coverage:
@@ -23,6 +24,7 @@ build:
 
 demo:
 	trace-ml verify --claim examples/claim.json --runs examples/runs.json
+	trace-ml verify --claim examples/comparison-claim.json --runs examples/comparison-runs.json
 
 clean:
 	rm -rf build dist .pytest_cache .coverage htmlcov *.egg-info src/*.egg-info

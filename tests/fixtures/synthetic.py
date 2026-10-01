@@ -73,8 +73,9 @@ def make_claim(
         "claimed_seed_count": claimed_seed_count,
         "claimed_aggregation": claimed_aggregation,
         "metric_split": metric_split,
-        "candidate_run_ids": candidate_run_ids or [],
     }
+    if candidate_run_ids is not None:
+        claim["candidate_run_ids"] = candidate_run_ids
     claim.update(extra)
     return claim
 

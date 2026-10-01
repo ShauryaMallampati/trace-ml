@@ -12,11 +12,15 @@ from trace_ml import __version__
 from trace_ml.verification.verify_claim import verify
 
 
+def _reject_nonstandard_number(value: str):
+    raise ValueError(f"non-standard JSON numeric constant {value}")
+
+
 def _read_json(path: Path) -> Any:
     try:
         with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except (OSError, json.JSONDecodeError) as exc:
+            return json.load(handle, parse_constant=_reject_nonstandard_number)
+    except (OSError, ValueError) as exc:
         raise ValueError(f"Could not read valid JSON from {path}: {exc}") from exc
 
 
@@ -58,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     verify_parser.add_argument("--output", type=Path, help="optional JSON output path")
     verify_parser.add_argument(
+        "--require-supported",
+        action="store_true",
+        help="exit 1 for a violation or 2 for insufficient evidence",
+    )
+    verify_parser.add_argument(
         "--compact",
         action="store_true",
         help="emit compact JSON",
@@ -82,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         result,
         indent=None if args.compact else 2,
         sort_keys=True,
+        allow_nan=False,
     )
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -89,6 +99,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(rendered)
 
+    if args.require_supported:
+        if result["verdict"] == "supported":
+            return 0
+        if result["verdict"] == "violation":
+            return 1
+        return 2
     return 0
 
 

@@ -6,11 +6,14 @@ A typical flow is:
 
 1. export completed run records;
 2. normalize a metric statement into a claim record;
-3. select the run IDs that the claim is supposed to summarize;
-4. call `verify(claim, runs)`;
-5. accept, block, or route the result for review based on the verdict.
+3. select the run IDs that the claim is supposed to summarize and record them in `candidate_run_ids`;
+4. for comparison claims, also select independent baseline runs and record them in `baseline_run_ids`;
+5. pass exactly those referenced records to `verify(claim, runs)`;
+6. accept, block, or route the result for review based on the verdict.
 
-For CI or release automation, a useful policy is:
+The verifier checks that the supplied run IDs match the claim manifests exactly. Missing references or extra unreferenced records return `insufficient_evidence` rather than being silently ignored.
+
+For CI or release automation, `trace-ml verify ... --require-supported` implements this policy directly:
 
 - `supported`: continue;
 - `violation`: fail the check;

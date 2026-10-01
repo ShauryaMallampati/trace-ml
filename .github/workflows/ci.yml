@@ -26,7 +26,13 @@ jobs:
       - run: python -m ruff format --check src tests
       - run: python -m pytest
       - if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13'
+        name: Coverage, package build, and installed-wheel smoke
         run: |
           coverage run -m pytest
           coverage report
           python -m build
+          python -m venv /tmp/trace-ml-wheel
+          /tmp/trace-ml-wheel/bin/python -m pip install dist/*.whl
+          cd /tmp
+          /tmp/trace-ml-wheel/bin/python -c "from trace_ml import verify; assert callable(verify)"
+          /tmp/trace-ml-wheel/bin/trace-ml --version

@@ -3,15 +3,16 @@ import math
 import pytest
 
 from trace_ml.verification import failure_types as FT
+from trace_ml.verification.seedset_checks import COMPARISON_AGGREGATIONS
 from trace_ml.verification.verify_claim import verify
 
 
-def make_runs(values=(0.7, 0.8, 0.9), **overrides):
+def make_runs(values=(0.7, 0.8, 0.9), *, method="method-a", run_prefix="run", **overrides):
     return [
         {
-            "run_id": f"run-{index}",
+            "run_id": f"{run_prefix}-{index}",
             "dataset": "dataset-a",
-            "method": "method-a",
+            "method": method,
             "seed": index,
             "metric_name": "accuracy",
             "metric_split": "test",
@@ -36,6 +37,25 @@ def make_claim(**overrides):
     return claim
 
 
+def comparison_inputs(aggregation, claimed_value, baseline_value=0.6, **extra):
+    method_runs = make_runs()
+    baseline_runs = make_runs(
+        values=(baseline_value, baseline_value, baseline_value),
+        method="baseline-a",
+        run_prefix="baseline",
+    )
+    claim = make_claim(
+        claimed_aggregation=aggregation,
+        claimed_value=claimed_value,
+        baseline="baseline-a",
+        claimed_baseline_method="baseline-a",
+        candidate_run_ids=[run["run_id"] for run in method_runs],
+        baseline_run_ids=[run["run_id"] for run in baseline_runs],
+        **extra,
+    )
+    return claim, method_runs + baseline_runs
+
+
 @pytest.mark.parametrize(
     ("aggregation", "claimed_value", "extra"),
     [
@@ -56,22 +76,22 @@ def make_claim(**overrides):
         ),
         ("single_seed", 0.8, {"claimed_seed_id": 1}),
         ("baseline_value", 0.8, {}),
-        ("delta", 0.2, {"true_baseline_value": 0.6}),
-        ("absolute_improvement", 0.2, {"true_baseline_value": 0.6}),
-        (
-            "relative_improvement",
-            (0.8 - 0.6) / 0.6,
-            {"true_baseline_value": 0.6},
-        ),
+        ("delta", 0.2, {}),
+        ("absolute_improvement", 0.2, {}),
+        ("relative_improvement", (0.8 - 0.6) / 0.6, {}),
     ],
 )
 def test_supported_aggregation_matrix(aggregation, claimed_value, extra):
-    claim = make_claim(
-        claimed_aggregation=aggregation,
-        claimed_value=claimed_value,
-        **extra,
-    )
-    assert verify(claim, make_runs())["verdict"] == FT.VERDICT_SUPPORTED
+    if aggregation in COMPARISON_AGGREGATIONS:
+        claim, runs = comparison_inputs(aggregation, claimed_value, **extra)
+    else:
+        claim = make_claim(
+            claimed_aggregation=aggregation,
+            claimed_value=claimed_value,
+            **extra,
+        )
+        runs = make_runs()
+    assert verify(claim, runs)["verdict"] == FT.VERDICT_SUPPORTED
 
 
 @pytest.mark.parametrize(
@@ -83,12 +103,17 @@ def test_supported_aggregation_matrix(aggregation, claimed_value, extra):
         ("mean_plus_minus_std", {"claimed_value": 0.8, "uncertainty_value": 0.5}),
         ("single_seed", {"claimed_value": 0.75, "claimed_seed_id": 1}),
         ("baseline_value", {"claimed_value": 0.75}),
-        ("delta", {"claimed_value": 0.1, "true_baseline_value": 0.6}),
-        ("relative_improvement", {"claimed_value": 0.1, "true_baseline_value": 0.6}),
+        ("delta", {"claimed_value": 0.1}),
+        ("relative_improvement", {"claimed_value": 0.1}),
     ],
 )
 def test_wrong_aggregation_values_are_violations(aggregation, extra):
-    result = verify(make_claim(claimed_aggregation=aggregation, **extra), make_runs())
+    if aggregation in COMPARISON_AGGREGATIONS:
+        claim, runs = comparison_inputs(aggregation, **extra)
+    else:
+        claim = make_claim(claimed_aggregation=aggregation, **extra)
+        runs = make_runs()
+    result = verify(claim, runs)
     assert result["verdict"] == FT.VERDICT_VIOLATION
     assert result["failure_type"] == FT.AGGREGATION_MISMATCH
 
@@ -99,13 +124,23 @@ def test_wrong_aggregation_values_are_violations(aggregation, extra):
         make_claim(claimed_aggregation="range", claimed_value=None),
         make_claim(claimed_aggregation="mean_plus_minus_std", uncertainty_value=None),
         make_claim(claimed_aggregation="single_seed", claimed_seed_id=None),
-        make_claim(claimed_aggregation="delta", true_baseline_value=None),
-        make_claim(claimed_aggregation="relative_improvement", true_baseline_value=0.0),
         make_claim(claimed_aggregation="unknown_role"),
     ],
 )
-def test_uncheckable_aggregations_return_insufficient_evidence(claim):
+def test_uncheckable_noncomparison_aggregations_return_insufficient_evidence(claim):
     result = verify(claim, make_runs())
+    assert result["verdict"] == FT.VERDICT_INSUFFICIENT_EVIDENCE
+
+
+def test_comparison_without_baseline_manifest_is_insufficient():
+    claim = make_claim(claimed_aggregation="delta", claimed_value=0.2, baseline="baseline-a")
+    result = verify(claim, make_runs())
+    assert result["verdict"] == FT.VERDICT_INSUFFICIENT_EVIDENCE
+
+
+def test_relative_improvement_against_zero_baseline_is_insufficient():
+    claim, runs = comparison_inputs("relative_improvement", 0.1, baseline_value=0.0)
+    result = verify(claim, runs)
     assert result["verdict"] == FT.VERDICT_INSUFFICIENT_EVIDENCE
 
 
@@ -143,8 +178,8 @@ def test_duplicate_seed_makes_trial_count_ambiguous():
     ("run_override", "expected"),
     [
         ({"status": "failed"}, FT.INSUFFICIENT_EVIDENCE),
-        ({"dataset": "dataset-b"}, FT.SPLIT_MISMATCH),
-        ({"method": "method-b"}, FT.STALE_BASELINE),
+        ({"dataset": "dataset-b"}, FT.DATASET_MISMATCH),
+        ({"method": "method-b"}, FT.METHOD_MISMATCH),
         ({"metric_name": "f1"}, FT.METRIC_MISMATCH),
         ({"metric_split": "validation"}, FT.SPLIT_MISMATCH),
     ],
@@ -155,14 +190,9 @@ def test_run_identity_and_completion_fail_closed(run_override, expected):
 
 
 def test_comparison_baseline_identity_is_checked():
-    claim = make_claim(
-        claimed_aggregation="delta",
-        claimed_value=0.2,
-        baseline="baseline-a",
-        claimed_baseline_method="baseline-b",
-        true_baseline_value=0.6,
-    )
-    assert verify(claim, make_runs())["failure_type"] == FT.STALE_BASELINE
+    claim, runs = comparison_inputs("delta", 0.2)
+    claim["claimed_baseline_method"] = "baseline-b"
+    assert verify(claim, runs)["failure_type"] == FT.STALE_BASELINE
 
 
 def test_empty_evidence_is_not_a_violation():

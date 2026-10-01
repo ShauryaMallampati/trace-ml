@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import math
+
 from trace_ml.verification import failure_types as FT
 
-TOLERANCE = 5e-4
+TOLERANCE = 5e-5
+
+COMPARISON_AGGREGATIONS = frozenset({"delta", "absolute_improvement", "relative_improvement"})
 
 
 def _failure(failure_type: str, rationale: str) -> dict:
     return {"failure_type": failure_type, "rationale": rationale}
+
+
+def _mean(values):
+    if not values:
+        return None
+    count = len(values)
+    return math.fsum(value / count for value in values)
 
 
 def _median(values):
@@ -24,8 +35,9 @@ def _population_std(values):
         return None
     if len(values) == 1:
         return 0.0
-    mean = sum(values) / len(values)
-    return (sum((value - mean) ** 2 for value in values) / len(values)) ** 0.5
+    mean = _mean(values)
+    result = math.hypot(*(value - mean for value in values)) / math.sqrt(len(values))
+    return result if math.isfinite(result) else None
 
 
 def _values_by_seed(runs):
@@ -37,6 +49,17 @@ def _values_by_seed(runs):
 
 def _conflicting_seed_values(runs):
     return [seed for seed, values in _values_by_seed(runs).items() if len(values) > 1]
+
+
+def _repeated_seeds(runs):
+    counts = {}
+    for run in runs:
+        seed = run["seed"]
+        counts[seed] = counts.get(seed, 0) + 1
+    return sorted(
+        (seed for seed, count in counts.items() if count > 1),
+        key=lambda value: (type(value).__name__, repr(value)),
+    )
 
 
 def check_runs_exist(claim, runs):
@@ -68,13 +91,13 @@ def check_consistent_dataset_method_metric(claim, runs):
 
     if claim["dataset"] not in datasets or len(datasets) > 1:
         return _failure(
-            FT.SPLIT_MISMATCH,
+            FT.DATASET_MISMATCH,
             f"Claim dataset '{claim['dataset']}' does not match "
             f"run ledger dataset(s) {sorted(datasets)}.",
         )
     if claim["method"] not in methods or len(methods) > 1:
         return _failure(
-            FT.STALE_BASELINE,
+            FT.METHOD_MISMATCH,
             f"Claim method '{claim['method']}' does not match "
             f"run ledger method(s) {sorted(methods)}.",
         )
@@ -105,13 +128,15 @@ def check_seed_count(claim, runs):
         if claimed_count is None:
             return None
 
-        conflicts = _conflicting_seed_values(runs)
-        if conflicts:
+        repeated = _repeated_seeds(runs)
+        if repeated:
+            conflicts = _conflicting_seed_values(runs)
+            detail = " and contain conflicting metric values" if conflicts else ""
             return _failure(
                 FT.AMBIGUOUS_SEED_COUNT,
-                "Claim uses the legacy seed-count field, but repeated records for "
-                f"seed(s) {conflicts} contain different metric values. "
-                "Deduplicate the ledger or state a run-level aggregation.",
+                "Claim uses seed-level semantics, but repeated run records exist for "
+                f"seed(s) {repeated}{detail}. Deduplicate the ledger or declare "
+                "run-level count semantics.",
             )
         if unique_seed_count < claimed_count:
             return _failure(
@@ -146,13 +171,14 @@ def check_seed_count(claim, runs):
                 "some seeds may have been dropped after the fact.",
             )
 
-        conflicts = _conflicting_seed_values(runs)
-        if conflicts:
+        repeated = _repeated_seeds(runs)
+        if repeated:
+            conflicts = _conflicting_seed_values(runs)
+            detail = " and contain conflicting metric values" if conflicts else ""
             return _failure(
                 FT.AMBIGUOUS_SEED_COUNT,
-                f"Repeated records for seed(s) {conflicts} contain different metric "
-                "values. TRACE-ML cannot infer a unique per-seed aggregate without "
-                "an explicit rule.",
+                f"Repeated run records for seed(s) {repeated}{detail}. TRACE-ML "
+                "cannot infer a unique per-seed aggregate from retry/duplicate records.",
             )
         return None
 
@@ -208,11 +234,7 @@ def check_seed_count(claim, runs):
 
 def check_baseline_method_identity(claim, runs):
     del runs
-    if claim.get("claimed_aggregation") not in (
-        "delta",
-        "absolute_improvement",
-        "relative_improvement",
-    ):
+    if claim.get("claimed_aggregation") not in COMPARISON_AGGREGATIONS:
         return None
 
     claimed_baseline = claim.get("claimed_baseline_method")
@@ -220,10 +242,7 @@ def check_baseline_method_identity(claim, runs):
     if not claimed_baseline or not configured_baseline:
         return None
 
-    def normalize(value):
-        return value.strip().lower().replace("-", "_").replace(" ", "_")
-
-    if normalize(claimed_baseline) != normalize(configured_baseline):
+    if claimed_baseline != configured_baseline:
         return _failure(
             FT.STALE_BASELINE,
             f"Claim cites baseline method '{claimed_baseline}', but the configured "
@@ -234,7 +253,7 @@ def check_baseline_method_identity(claim, runs):
 
 def check_aggregation_correctness(claim, runs):
     values = [run["metric_value"] for run in runs]
-    true_mean = sum(values) / len(values)
+    true_mean = _mean(values)
     best_value = max(values)
     worst_value = min(values)
 
@@ -306,6 +325,11 @@ def check_aggregation_correctness(claim, runs):
 
     if claimed_aggregation in ("std", "standard_deviation"):
         true_std = _population_std(values)
+        if true_std is None:
+            return _failure(
+                FT.INSUFFICIENT_EVIDENCE,
+                "Population standard deviation is not representable as a finite float.",
+            )
         if abs(claimed_value - true_std) < TOLERANCE:
             return None
         return _failure(
@@ -340,6 +364,11 @@ def check_aggregation_correctness(claim, runs):
 
     if claimed_aggregation == "mean_plus_minus_std":
         true_std = _population_std(values)
+        if true_std is None:
+            return _failure(
+                FT.INSUFFICIENT_EVIDENCE,
+                "Population standard deviation is not representable as a finite float.",
+            )
         uncertainty = claim.get("uncertainty_value")
         if uncertainty is None:
             return _failure(
@@ -375,7 +404,14 @@ def check_aggregation_correctness(claim, runs):
                 FT.INSUFFICIENT_EVIDENCE,
                 f"No run for seed {seed_id} exists among the candidate runs.",
             )
-        if any(abs(claimed_value - value) < TOLERANCE for value in matching_values):
+        unique_values = set(matching_values)
+        if len(unique_values) > 1:
+            return _failure(
+                FT.AMBIGUOUS_SEED_COUNT,
+                f"Seed {seed_id} has conflicting metric values {sorted(unique_values)} "
+                "across multiple run records.",
+            )
+        if abs(claimed_value - matching_values[0]) < TOLERANCE:
             return None
         return _failure(
             FT.AGGREGATION_MISMATCH,
@@ -392,11 +428,7 @@ def check_aggregation_correctness(claim, runs):
             f"baseline mean is {true_mean:.4f}.",
         )
 
-    if claimed_aggregation in (
-        "delta",
-        "absolute_improvement",
-        "relative_improvement",
-    ):
+    if claimed_aggregation in COMPARISON_AGGREGATIONS:
         true_baseline = claim.get("true_baseline_value")
         if true_baseline is None:
             return _failure(
@@ -410,10 +442,15 @@ def check_aggregation_correctness(claim, runs):
                     FT.UNSUPPORTED_CLAIM_TYPE,
                     "Cannot compute relative improvement against a zero baseline.",
                 )
-            true_value = (true_mean - true_baseline) / true_baseline
+            true_value = true_mean / true_baseline - 1.0
         else:
             true_value = true_mean - true_baseline
 
+        if not math.isfinite(true_value):
+            return _failure(
+                FT.INSUFFICIENT_EVIDENCE,
+                f"Computed {claimed_aggregation} is not finite for the supplied evidence.",
+            )
         if abs(claimed_value - true_value) < TOLERANCE:
             return None
         return _failure(

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.0 - 2026-10-01
+
+- Enforce exact `candidate_run_ids` manifests instead of accepting silently missing or extra evidence.
+- Require independently supplied `baseline_run_ids` for delta and improvement claims; baseline means are recomputed from those records.
+- Tighten four-decimal absolute tolerance from `5e-4` to `5e-5`.
+- Canonicalize evidence order and use numerically stable mean/standard-deviation calculations.
+- Reject empty seed identifiers, duplicate reference IDs, and boolean single-seed identifiers.
+- Add `--require-supported` for CI-friendly exit codes and expose `verify` at the top-level Python package.
+- Distinguish dataset and method identity mismatches from split and baseline failures in the machine-readable taxonomy.
+
 ## 1.0.0 - 2026-07-13
 
 - Added the installable `trace_ml` package and `trace-ml` CLI.

@@ -3,6 +3,8 @@ from trace_ml.verification import failure_types as FT
 EXPECTED_FAILURE_TYPES = {
     "supported",
     "fabricated_metric",
+    "dataset_mismatch",
+    "method_mismatch",
     "metric_mismatch",
     "split_mismatch",
     "stale_baseline",
@@ -16,8 +18,8 @@ EXPECTED_FAILURE_TYPES = {
 }
 
 
-def test_exactly_twelve_failure_types():
-    assert len(FT.ALL_FAILURE_TYPES) == 12
+def test_expected_failure_type_count():
+    assert len(FT.ALL_FAILURE_TYPES) == 14
 
 
 def test_no_duplicate_failure_types():

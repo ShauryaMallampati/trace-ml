@@ -103,6 +103,15 @@ def test_duplicate_seed_for_seed_aggregation_is_ambiguous():
 
 
 def test_default_pipeline_checks_named_baseline_identity():
+    baseline_runs = [
+        {
+            **run,
+            "run_id": f"baseline-{index}",
+            "method": "baseline_a",
+            "metric_value": 0.70,
+        }
+        for index, run in enumerate(deepcopy(RUNS))
+    ]
     claim = {
         **CLAIM,
         "claimed_aggregation": "delta",
@@ -110,9 +119,10 @@ def test_default_pipeline_checks_named_baseline_identity():
         "claimed_seed_count": None,
         "baseline": "baseline_a",
         "claimed_baseline_method": "baseline_b",
-        "true_baseline_value": 0.70,
+        "candidate_run_ids": [run["run_id"] for run in RUNS],
+        "baseline_run_ids": [run["run_id"] for run in baseline_runs],
     }
-    assert verify(claim, deepcopy(RUNS))["failure_type"] == "stale_baseline"
+    assert verify(claim, deepcopy(RUNS) + baseline_runs)["failure_type"] == "stale_baseline"
 
 
 def test_repeated_verification_is_deterministic():

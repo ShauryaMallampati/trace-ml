@@ -1,0 +1,13 @@
+{
+  "claim_id": "demo-delta",
+  "dataset": "demo",
+  "method": "classifier-a",
+  "baseline": "classifier-b",
+  "claimed_baseline_method": "classifier-b",
+  "metric": "accuracy",
+  "metric_split": "test",
+  "claimed_aggregation": "delta",
+  "claimed_value": 0.04,
+  "candidate_run_ids": ["method-seed-0", "method-seed-1"],
+  "baseline_run_ids": ["baseline-seed-0", "baseline-seed-1"]
+}

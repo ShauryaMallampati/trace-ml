@@ -1,0 +1,42 @@
+[
+  {
+    "run_id": "method-seed-0",
+    "dataset": "demo",
+    "method": "classifier-a",
+    "seed": 0,
+    "metric_name": "accuracy",
+    "metric_split": "test",
+    "metric_value": 0.82,
+    "status": "completed"
+  },
+  {
+    "run_id": "method-seed-1",
+    "dataset": "demo",
+    "method": "classifier-a",
+    "seed": 1,
+    "metric_name": "accuracy",
+    "metric_split": "test",
+    "metric_value": 0.84,
+    "status": "completed"
+  },
+  {
+    "run_id": "baseline-seed-0",
+    "dataset": "demo",
+    "method": "classifier-b",
+    "seed": 0,
+    "metric_name": "accuracy",
+    "metric_split": "test",
+    "metric_value": 0.78,
+    "status": "completed"
+  },
+  {
+    "run_id": "baseline-seed-1",
+    "dataset": "demo",
+    "method": "classifier-b",
+    "seed": 1,
+    "metric_name": "accuracy",
+    "metric_split": "test",
+    "metric_value": 0.80,
+    "status": "completed"
+  }
+]

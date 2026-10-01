@@ -8,6 +8,7 @@ from numbers import Real
 
 from trace_ml.verification import failure_types as FT
 from trace_ml.verification.seedset_checks import (
+    COMPARISON_AGGREGATIONS,
     TOLERANCE,
     check_aggregation_correctness,
     check_baseline_method_identity,
@@ -38,6 +39,13 @@ def _singleton_or_list(values):
     return ordered
 
 
+def _mean(values):
+    if not values:
+        return None
+    count = len(values)
+    return math.fsum(value / count for value in values)
+
+
 def _median(values):
     if not values:
         return None
@@ -53,8 +61,9 @@ def _population_std(values):
         return None
     if len(values) == 1:
         return 0.0
-    mean = sum(values) / len(values)
-    return (sum((value - mean) ** 2 for value in values) / len(values)) ** 0.5
+    mean = _mean(values)
+    result = math.hypot(*(value - mean for value in values)) / math.sqrt(len(values))
+    return result if math.isfinite(result) else None
 
 
 def _is_finite_number(value) -> bool:
@@ -75,13 +84,13 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
 
     for field in ("dataset", "method", "metric", "metric_split"):
         value = claim.get(field)
-        if field not in claim or value in (None, ""):
+        if field not in claim or value is None:
             problems.append(f"claim missing required field '{field}'")
-        elif not isinstance(value, str):
+        elif not isinstance(value, str) or not value.strip():
             problems.append(f"claim field '{field}' must be a non-empty string")
 
     aggregation = claim.get("claimed_aggregation", "mean")
-    if not isinstance(aggregation, str) or not aggregation:
+    if not isinstance(aggregation, str) or not aggregation.strip():
         problems.append("claim field 'claimed_aggregation' must be a non-empty string")
 
     if aggregation not in ("range", "min_max_range") and "claimed_value" not in claim:
@@ -127,13 +136,35 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
         if value is not None and not _is_nonnegative_int(value):
             problems.append(f"claim field '{field}' must be a non-negative integer")
 
-    candidate_run_ids = claim.get("candidate_run_ids")
-    if candidate_run_ids is not None:
-        valid_ids = isinstance(candidate_run_ids, list) and all(
-            isinstance(run_id, str) and run_id for run_id in candidate_run_ids
+    for field in ("baseline", "claimed_baseline_method"):
+        value = claim.get(field)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            problems.append(f"claim field '{field}' must be a non-empty string or null")
+
+    claimed_seed_id = claim.get("claimed_seed_id")
+    if claimed_seed_id is not None and (
+        isinstance(claimed_seed_id, bool)
+        or not isinstance(claimed_seed_id, (int, str))
+        or (isinstance(claimed_seed_id, str) and not claimed_seed_id.strip())
+    ):
+        problems.append(
+            "claim field 'claimed_seed_id' must be an integer, non-empty string, or null"
+        )
+
+    for field in ("candidate_run_ids", "baseline_run_ids"):
+        run_ids = claim.get(field)
+        if run_ids is None:
+            continue
+        valid_ids = (
+            isinstance(run_ids, list)
+            and bool(run_ids)
+            and all(isinstance(run_id, str) and run_id.strip() for run_id in run_ids)
+            and len(run_ids) == len(set(run_ids))
         )
         if not valid_ids:
-            problems.append("claim field 'candidate_run_ids' must be a list of non-empty strings")
+            problems.append(
+                f"claim field '{field}' must be a non-empty list of unique non-empty strings"
+            )
 
     required_run_fields = (
         "run_id",
@@ -168,7 +199,7 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
 
         for field in string_run_fields:
             value = run.get(field)
-            if value is not None and (not isinstance(value, str) or not value):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
                 problems.append(f"run[{index}] field '{field}' must be a non-empty string")
 
         run_id = run.get("run_id")
@@ -179,10 +210,18 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
 
         seed = run.get("seed")
         if seed is not None:
-            if isinstance(seed, bool) or not isinstance(seed, (int, str)):
-                problems.append(f"run[{index}] field 'seed' must be an integer or string")
+            if (
+                isinstance(seed, bool)
+                or not isinstance(seed, (int, str))
+                or (isinstance(seed, str) and not seed.strip())
+            ):
+                problems.append(f"run[{index}] field 'seed' must be an integer or non-empty string")
             else:
                 seed_types.add(type(seed))
+
+        status = run.get("status")
+        if status is not None and status not in {"completed", "failed", "running"}:
+            problems.append(f"run[{index}] field 'status' must be completed, failed, or running")
 
         value = run.get("metric_value")
         if value is not None and not _is_finite_number(value):
@@ -198,7 +237,163 @@ def _sort_key(value):
     return (type(value).__name__, repr(value))
 
 
-def compute_evidence(claim: dict, runs: list) -> dict:
+def _reference_error(rationale: str) -> dict:
+    return {"failure_type": FT.INSUFFICIENT_EVIDENCE, "rationale": rationale}
+
+
+def _resolve_run_sets(claim: dict, runs: list) -> tuple[list, list, dict | None]:
+    """Resolve the exact method and baseline records referenced by a claim.
+
+    For ordinary claims, candidate_run_ids is an optional manifest for the supplied
+    run list. For comparison claims, explicit method and baseline manifests are
+    required so a caller cannot self-assert the baseline value.
+    """
+
+    ledger_ids = {run["run_id"] for run in runs}
+    candidate_ids = claim.get("candidate_run_ids")
+    baseline_ids = claim.get("baseline_run_ids")
+    aggregation = claim.get("claimed_aggregation", "mean")
+
+    if aggregation in COMPARISON_AGGREGATIONS:
+        if not candidate_ids:
+            return (
+                [],
+                [],
+                _reference_error(
+                    "Comparison claims require candidate_run_ids for the method evidence."
+                ),
+            )
+        if not baseline_ids:
+            return (
+                [],
+                [],
+                _reference_error(
+                    "Comparison claims require baseline_run_ids for independently supplied baseline evidence."
+                ),
+            )
+        if not claim.get("baseline"):
+            return (
+                [],
+                [],
+                _reference_error("Comparison claims require a non-empty baseline method name."),
+            )
+        overlap = set(candidate_ids) & set(baseline_ids)
+        if overlap:
+            return (
+                [],
+                [],
+                _reference_error(
+                    f"Method and baseline run manifests overlap at run ID(s) {sorted(overlap)}."
+                ),
+            )
+        referenced_ids = set(candidate_ids) | set(baseline_ids)
+    else:
+        if baseline_ids is not None:
+            return (
+                [],
+                [],
+                _reference_error("baseline_run_ids is only valid for comparison aggregations."),
+            )
+        referenced_ids = set(candidate_ids) if candidate_ids is not None else ledger_ids
+
+    missing = referenced_ids - ledger_ids
+    extra = ledger_ids - referenced_ids
+    if missing:
+        return (
+            [],
+            [],
+            _reference_error(
+                f"Referenced run ID(s) {sorted(missing)} are missing from the supplied ledger."
+            ),
+        )
+    if extra:
+        return (
+            [],
+            [],
+            _reference_error(
+                f"Supplied ledger contains unreferenced run ID(s) {sorted(extra)}; "
+                "the evidence manifest and supplied records must match exactly."
+            ),
+        )
+
+    if aggregation in COMPARISON_AGGREGATIONS:
+        candidate_set = set(candidate_ids)
+        baseline_set = set(baseline_ids)
+        method_runs = sorted(
+            (run for run in runs if run["run_id"] in candidate_set),
+            key=lambda run: run["run_id"],
+        )
+        baseline_runs = sorted(
+            (run for run in runs if run["run_id"] in baseline_set),
+            key=lambda run: run["run_id"],
+        )
+        return method_runs, baseline_runs, None
+
+    return sorted(runs, key=lambda run: run["run_id"]), [], None
+
+
+def _check_baseline_evidence(claim: dict, baseline_runs: list) -> dict | None:
+    if not baseline_runs:
+        return _reference_error("No baseline run evidence was supplied for the comparison claim.")
+
+    incomplete = [run["run_id"] for run in baseline_runs if run["status"] != "completed"]
+    if incomplete:
+        return _reference_error(f"Baseline run(s) {sorted(incomplete)} are not marked 'completed'.")
+
+    expected_baseline = claim["baseline"]
+    datasets = {run["dataset"] for run in baseline_runs}
+    methods = {run["method"] for run in baseline_runs}
+    metrics = {run["metric_name"] for run in baseline_runs}
+    splits = {run["metric_split"] for run in baseline_runs}
+
+    if datasets != {claim["dataset"]}:
+        return {
+            "failure_type": FT.DATASET_MISMATCH,
+            "rationale": (
+                f"Baseline ledger dataset(s) {sorted(datasets)} do not match "
+                f"claim dataset '{claim['dataset']}'."
+            ),
+        }
+    if methods != {expected_baseline}:
+        return {
+            "failure_type": FT.STALE_BASELINE,
+            "rationale": (
+                f"Baseline ledger method(s) {sorted(methods)} do not match "
+                f"configured baseline '{expected_baseline}'."
+            ),
+        }
+    if metrics != {claim["metric"]}:
+        return {
+            "failure_type": FT.METRIC_MISMATCH,
+            "rationale": (
+                f"Baseline ledger metric(s) {sorted(metrics)} do not match "
+                f"claim metric '{claim['metric']}'."
+            ),
+        }
+    if splits != {claim["metric_split"]}:
+        return {
+            "failure_type": FT.SPLIT_MISMATCH,
+            "rationale": (
+                f"Baseline ledger split(s) {sorted(splits)} do not match "
+                f"claim split '{claim['metric_split']}'."
+            ),
+        }
+
+    baseline_mean = _mean([float(run["metric_value"]) for run in baseline_runs])
+    stated_value = claim.get("true_baseline_value")
+    if stated_value is not None and abs(stated_value - baseline_mean) >= TOLERANCE:
+        return {
+            "failure_type": FT.STALE_BASELINE,
+            "rationale": (
+                f"Claim states baseline value {stated_value:.4f}, but the referenced "
+                f"baseline runs have mean {baseline_mean:.4f}."
+            ),
+        }
+    return None
+
+
+def compute_evidence(claim: dict, runs: list, baseline_runs: list | None = None) -> dict:
+    baseline_runs = baseline_runs or []
     values = [
         float(run["metric_value"])
         for run in runs
@@ -228,11 +423,26 @@ def compute_evidence(claim: dict, runs: list) -> dict:
         if isinstance(run, dict) and run.get("metric_split") is not None
     }
 
-    computed_mean = sum(values) / len(values) if values else None
+    computed_mean = _mean(values)
     computed_median = _median(values)
     computed_std = _population_std(values)
     computed_min = min(values) if values else None
     computed_max = max(values) if values else None
+
+    baseline_values = [
+        float(run["metric_value"])
+        for run in baseline_runs
+        if isinstance(run, dict) and _is_finite_number(run.get("metric_value"))
+    ]
+    baseline_run_ids = sorted(
+        {
+            run.get("run_id")
+            for run in baseline_runs
+            if isinstance(run, dict) and run.get("run_id") is not None
+        },
+        key=_sort_key,
+    )
+    computed_baseline_mean = _mean(baseline_values)
 
     ledger_run_record_count = len(runs)
     ledger_unique_seed_count = len(ledger_seeds)
@@ -241,8 +451,25 @@ def compute_evidence(claim: dict, runs: list) -> dict:
     claimed_value = claim.get("claimed_value")
     aggregation_claimed = claim.get("claimed_aggregation", "mean")
     aggregation_computed = None
+    computed_comparison_value = None
+    if computed_mean is not None and computed_baseline_mean is not None:
+        if aggregation_claimed == "relative_improvement":
+            if computed_baseline_mean != 0:
+                computed_comparison_value = computed_mean / computed_baseline_mean - 1.0
+        elif aggregation_claimed in {"delta", "absolute_improvement"}:
+            computed_comparison_value = computed_mean - computed_baseline_mean
+        if computed_comparison_value is not None and not math.isfinite(computed_comparison_value):
+            computed_comparison_value = None
 
-    if values and _is_finite_number(claimed_value):
+    if (
+        aggregation_claimed in COMPARISON_AGGREGATIONS
+        and _is_finite_number(claimed_value)
+        and computed_comparison_value is not None
+        and math.isfinite(computed_comparison_value)
+        and abs(claimed_value - computed_comparison_value) < TOLERANCE
+    ):
+        aggregation_computed = aggregation_claimed
+    elif values and _is_finite_number(claimed_value):
         if computed_mean is not None and abs(claimed_value - computed_mean) < TOLERANCE:
             aggregation_computed = "mean"
         elif computed_max is not None and abs(claimed_value - computed_max) < TOLERANCE:
@@ -284,6 +511,11 @@ def compute_evidence(claim: dict, runs: list) -> dict:
         "claimed_high_value": claim.get("claimed_high_value"),
         "uncertainty_value": claim.get("uncertainty_value"),
         "true_baseline_value": claim.get("true_baseline_value"),
+        "baseline_method_claimed": claim.get("baseline"),
+        "baseline_run_ids": baseline_run_ids,
+        "baseline_run_record_count": len(baseline_runs),
+        "computed_baseline_mean": computed_baseline_mean,
+        "computed_comparison_value": computed_comparison_value,
     }
 
 
@@ -307,9 +539,33 @@ def _expected_value_text(claim: dict, evidence: dict) -> str:
         return f"{evidence['computed_mean']:.4f} +/- {evidence['computed_std']:.4f}"
     if aggregation == "single_seed":
         return f"{claimed_value:.4f} for seed {claim.get('claimed_seed_id')}"
+    if aggregation in COMPARISON_AGGREGATIONS:
+        computed = evidence.get("computed_comparison_value")
+        if computed is not None:
+            return f"{computed:.4f}"
     if claimed_value is not None:
         return f"{claimed_value:.4f}"
     return "the stated value(s)"
+
+
+def _result_from_failure(
+    failure: dict,
+    supporting_run_ids: list[str],
+    evidence: dict,
+) -> dict:
+    failure_type = failure["failure_type"]
+    verdict = (
+        FT.VERDICT_INSUFFICIENT_EVIDENCE
+        if failure_type in FT.INSUFFICIENT_VERDICT_TYPES
+        else FT.VERDICT_VIOLATION
+    )
+    return {
+        "verdict": verdict,
+        "failure_type": failure_type,
+        "supporting_run_ids": supporting_run_ids,
+        "evidence": evidence,
+        "rationale": failure["rationale"],
+    }
 
 
 def verify(
@@ -324,10 +580,14 @@ def verify(
     safe_runs = runs if isinstance(runs, list) else []
 
     validation_problems = _validate_inputs(claim, runs)
+    supporting_run_ids = sorted(
+        {
+            run.get("run_id")
+            for run in safe_runs
+            if isinstance(run, dict) and isinstance(run.get("run_id"), str) and run.get("run_id")
+        }
+    )
     evidence = compute_evidence(safe_claim, safe_runs)
-    supporting_run_ids = [
-        run.get("run_id") for run in safe_runs if isinstance(run, dict) and run.get("run_id")
-    ]
 
     if validation_problems:
         return {
@@ -338,30 +598,49 @@ def verify(
             "rationale": "Input schema validation failed: " + "; ".join(validation_problems) + ".",
         }
 
+    method_runs, baseline_runs, reference_failure = _resolve_run_sets(claim, runs)
+    if reference_failure is not None:
+        return _result_from_failure(reference_failure, supporting_run_ids, evidence)
+
+    supporting_run_ids = sorted(
+        [run["run_id"] for run in method_runs] + [run["run_id"] for run in baseline_runs]
+    )
+    evidence = compute_evidence(claim, method_runs, baseline_runs)
+
+    effective_claim = dict(claim)
+    if claim.get("claimed_aggregation") in COMPARISON_AGGREGATIONS:
+        baseline_failure = _check_baseline_evidence(claim, baseline_runs)
+        if baseline_failure is not None:
+            return _result_from_failure(baseline_failure, supporting_run_ids, evidence)
+
+        computed_baseline_mean = evidence["computed_baseline_mean"]
+        if computed_baseline_mean is None:
+            return _result_from_failure(
+                _reference_error("Baseline evidence does not contain a finite metric value."),
+                supporting_run_ids,
+                evidence,
+            )
+        effective_claim["true_baseline_value"] = computed_baseline_mean
+
     for check in active_checks:
-        result = check(claim, runs)
+        result = check(effective_claim, method_runs)
         if result is None:
             continue
-
-        failure_type = result["failure_type"]
-        verdict = (
-            FT.VERDICT_INSUFFICIENT_EVIDENCE
-            if failure_type in FT.INSUFFICIENT_VERDICT_TYPES
-            else FT.VERDICT_VIOLATION
-        )
-        return {
-            "verdict": verdict,
-            "failure_type": failure_type,
-            "supporting_run_ids": supporting_run_ids,
-            "evidence": evidence,
-            "rationale": result["rationale"],
-        }
+        return _result_from_failure(result, supporting_run_ids, evidence)
 
     aggregation = claim.get("claimed_aggregation", "mean")
-    expected_text = _expected_value_text(claim, evidence)
+    expected_text = _expected_value_text(effective_claim, evidence)
+    if baseline_runs:
+        record_text = (
+            f"{len(method_runs)} method run record(s) and "
+            f"{len(baseline_runs)} baseline run record(s)"
+        )
+    else:
+        record_text = f"{len(method_runs)} run record(s)"
+
     rationale = (
-        f"Claim's {aggregation} value ({expected_text}) matches the ledger across "
-        f"{len(runs)} run record(s), with dataset, method, metric, and split consistent."
+        f"Claim's {aggregation} value ({expected_text}) matches {record_text}, "
+        "with dataset, method, metric, split, and referenced evidence consistent."
     )
 
     return {

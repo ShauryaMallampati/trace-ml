@@ -2,6 +2,8 @@
 
 SUPPORTED = "supported"
 FABRICATED_METRIC = "fabricated_metric"
+DATASET_MISMATCH = "dataset_mismatch"
+METHOD_MISMATCH = "method_mismatch"
 METRIC_MISMATCH = "metric_mismatch"
 SPLIT_MISMATCH = "split_mismatch"
 STALE_BASELINE = "stale_baseline"
@@ -16,6 +18,8 @@ UNSUPPORTED_CLAIM_TYPE = "unsupported_claim_type"
 ALL_FAILURE_TYPES = [
     SUPPORTED,
     FABRICATED_METRIC,
+    DATASET_MISMATCH,
+    METHOD_MISMATCH,
     METRIC_MISMATCH,
     SPLIT_MISMATCH,
     STALE_BASELINE,

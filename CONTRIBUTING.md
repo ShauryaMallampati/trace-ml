@@ -7,6 +7,7 @@ Before opening a pull request:
 ```bash
 python -m pip install -e ".[test]"
 python -m ruff check src tests
+python -m ruff format --check src tests
 python -m pytest
 python -m build
 ```

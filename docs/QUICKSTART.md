@@ -23,12 +23,14 @@ The result contains a three-way verdict, a stable failure type, supporting run I
 ## Use the Python API
 
 ```python
-from trace_ml.verification.verify_claim import verify
+from trace_ml import verify
 
 result = verify(claim, runs)
 if result["verdict"] != "supported":
     print(result["failure_type"], result["rationale"])
 ```
+
+For a CI gate, add `--require-supported` to the CLI command. Supported claims exit `0`, violations exit `1`, and insufficient evidence exits `2`.
 
 ## Run the developer checks
 
