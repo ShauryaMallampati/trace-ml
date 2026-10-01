@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ShauryaMallampati/trace-ml/blob/main/schemas/claim-record.schema.json",
+  "title": "TRACE-ML claim record",
+  "type": "object",
+  "required": ["dataset", "method", "metric", "metric_split", "claimed_aggregation"],
+  "properties": {
+    "claim_id": {"type": "string"},
+    "dataset": {"type": "string", "minLength": 1},
+    "method": {"type": "string", "minLength": 1},
+    "metric": {"type": "string", "minLength": 1},
+    "metric_split": {"type": "string", "minLength": 1},
+    "baseline": {"type": ["string", "null"]},
+    "claimed_baseline_method": {"type": ["string", "null"]},
+    "true_baseline_value": {"type": ["number", "null"]},
+    "claimed_value": {"type": ["number", "null"]},
+    "claimed_aggregation": {"type": "string", "minLength": 1},
+    "claimed_count_type": {"type": ["string", "null"], "enum": ["seeds", "runs", "trials", null]},
+    "claimed_seed_count": {"type": ["integer", "null"], "minimum": 0},
+    "claimed_run_count": {"type": ["integer", "null"], "minimum": 0},
+    "claimed_trial_count": {"type": ["integer", "null"], "minimum": 0},
+    "claimed_seed_id": {"type": ["integer", "string", "null"]},
+    "claimed_low_value": {"type": ["number", "null"]},
+    "claimed_high_value": {"type": ["number", "null"]},
+    "uncertainty_value": {"type": ["number", "null"]},
+    "candidate_run_ids": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"claimed_aggregation": {"enum": ["range", "min_max_range"]}},
+        "required": ["claimed_aggregation"]
+      },
+      "then": {
+        "required": ["claimed_low_value", "claimed_high_value"],
+        "properties": {
+          "claimed_low_value": {"type": "number"},
+          "claimed_high_value": {"type": "number"}
+        }
+      },
+      "else": {
+        "required": ["claimed_value"],
+        "properties": {"claimed_value": {"type": "number"}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"claimed_count_type": {"const": "seeds"}},
+        "required": ["claimed_count_type"]
+      },
+      "then": {
+        "required": ["claimed_seed_count"],
+        "properties": {"claimed_seed_count": {"type": "integer", "minimum": 0}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"claimed_count_type": {"const": "runs"}},
+        "required": ["claimed_count_type"]
+      },
+      "then": {
+        "required": ["claimed_run_count"],
+        "properties": {"claimed_run_count": {"type": "integer", "minimum": 0}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"claimed_count_type": {"const": "trials"}},
+        "required": ["claimed_count_type"]
+      },
+      "then": {
+        "required": ["claimed_trial_count"],
+        "properties": {"claimed_trial_count": {"type": "integer", "minimum": 0}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"claimed_aggregation": {"const": "mean_plus_minus_std"}},
+        "required": ["claimed_aggregation"]
+      },
+      "then": {
+        "required": ["uncertainty_value"],
+        "properties": {"uncertainty_value": {"type": "number"}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"claimed_aggregation": {"const": "single_seed"}},
+        "required": ["claimed_aggregation"]
+      },
+      "then": {
+        "required": ["claimed_seed_id"],
+        "properties": {"claimed_seed_id": {"type": ["integer", "string"]}}
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "claimed_aggregation": {"enum": ["delta", "absolute_improvement", "relative_improvement"]}
+        },
+        "required": ["claimed_aggregation"]
+      },
+      "then": {
+        "required": ["true_baseline_value"],
+        "properties": {"true_baseline_value": {"type": "number"}}
+      }
+    }
+  ],
+  "additionalProperties": true
+}

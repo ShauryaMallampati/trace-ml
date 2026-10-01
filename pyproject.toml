@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trace-ml-verifier"
+version = "1.0.0"
+description = "Deterministic validation for ML experiment metrics, baselines, and run metadata"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "Shaurya Mallampati"}]
+keywords = ["machine-learning", "verification", "reproducibility", "experiments", "validation"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Homepage = "https://github.com/ShauryaMallampati/trace-ml"
+Repository = "https://github.com/ShauryaMallampati/trace-ml"
+Issues = "https://github.com/ShauryaMallampati/trace-ml/issues"
+Documentation = "https://github.com/ShauryaMallampati/trace-ml/tree/main/docs"
+
+[project.scripts]
+trace-ml = "trace_ml.cli:main"
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<10",
+  "coverage[toml]>=7,<8",
+  "build>=1,<2",
+  "ruff>=0.9,<1",
+  "jsonschema>=4.23,<5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["trace_ml*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+branch = true
+source = ["trace_ml.verification"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 85
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]

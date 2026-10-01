@@ -1,0 +1,22 @@
+[
+  {
+    "run_id": "demo-seed-0",
+    "dataset": "demo",
+    "method": "classifier-a",
+    "seed": 0,
+    "metric_name": "accuracy",
+    "metric_split": "test",
+    "metric_value": 0.80,
+    "status": "completed"
+  },
+  {
+    "run_id": "demo-seed-1",
+    "dataset": "demo",
+    "method": "classifier-a",
+    "seed": 1,
+    "metric_name": "accuracy",
+    "metric_split": "test",
+    "metric_value": 0.84,
+    "status": "completed"
+  }
+]

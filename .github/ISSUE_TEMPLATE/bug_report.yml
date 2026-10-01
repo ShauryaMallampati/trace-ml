@@ -1,0 +1,24 @@
+name: Bug report
+description: Report incorrect, unsafe, or non-deterministic verifier behavior
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal claim and run records
+      description: Remove private or sensitive data.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TRACE-ML version and Python version
+    validations:
+      required: true

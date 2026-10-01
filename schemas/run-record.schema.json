@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ShauryaMallampati/trace-ml/blob/main/schemas/run-record.schema.json",
+  "title": "TRACE-ML run record",
+  "type": "object",
+  "required": [
+    "run_id",
+    "dataset",
+    "method",
+    "seed",
+    "metric_name",
+    "metric_split",
+    "metric_value",
+    "status"
+  ],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "dataset": {"type": "string", "minLength": 1},
+    "method": {"type": "string", "minLength": 1},
+    "seed": {"type": ["integer", "string"]},
+    "metric_name": {"type": "string", "minLength": 1},
+    "metric_split": {"type": "string", "minLength": 1},
+    "metric_value": {"type": "number"},
+    "status": {"enum": ["completed", "failed", "running"]},
+    "experiment_group_id": {"type": "string"},
+    "task_id": {"type": "string"},
+    "split_id": {"type": "string"},
+    "split_hash": {"type": "string"},
+    "baseline": {"type": ["string", "null"]},
+    "command": {"type": "string"},
+    "config_hash": {"type": "string"},
+    "timestamp": {"type": "number"},
+    "log_path": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}

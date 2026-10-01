@@ -1,0 +1,11 @@
+{
+  "claim_id": "demo-mean",
+  "dataset": "demo",
+  "method": "classifier-a",
+  "metric": "accuracy",
+  "metric_split": "test",
+  "claimed_seed_count": 2,
+  "claimed_aggregation": "mean",
+  "claimed_value": 0.82,
+  "candidate_run_ids": ["demo-seed-0", "demo-seed-1"]
+}
