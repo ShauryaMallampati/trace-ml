@@ -75,16 +75,30 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
         elif not isinstance(value, str) or not value.strip():
             problems.append(f"claim field '{field}' must be a non-empty string")
 
+    if "claimed_aggregation" not in claim:
+        problems.append("claim missing required field 'claimed_aggregation'")
+
     aggregation = claim.get("claimed_aggregation", "mean")
     if not isinstance(aggregation, str) or not aggregation.strip():
         problems.append("claim field 'claimed_aggregation' must be a non-empty string")
 
-    if aggregation not in ("range", "min_max_range") and "claimed_value" not in claim:
-        problems.append("claim missing required field 'claimed_value'")
-
     claimed_value = claim.get("claimed_value")
-    if claimed_value is not None and not _is_finite_number(claimed_value):
-        problems.append("claim field 'claimed_value' must be a finite number or null")
+    if aggregation in ("range", "min_max_range"):
+        for field in ("claimed_low_value", "claimed_high_value"):
+            if field not in claim or claim.get(field) is None:
+                problems.append(f"claim missing required numeric field '{field}'")
+        if claimed_value is not None and not _is_finite_number(claimed_value):
+            problems.append("claim field 'claimed_value' must be a finite number or null")
+    else:
+        if "claimed_value" not in claim:
+            problems.append("claim missing required field 'claimed_value'")
+        elif not _is_finite_number(claimed_value):
+            problems.append("claim field 'claimed_value' must be a finite number")
+
+    if aggregation == "mean_plus_minus_std" and claim.get("uncertainty_value") is None:
+        problems.append("claim missing required numeric field 'uncertainty_value'")
+    if aggregation == "single_seed" and claim.get("claimed_seed_id") is None:
+        problems.append("claim missing required field 'claimed_seed_id'")
 
     numeric_optional_fields = (
         "claimed_low_value",
@@ -168,7 +182,6 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
         "method",
         "metric_name",
         "metric_split",
-        "status",
     )
 
     seen_run_ids: set[str] = set()
@@ -184,18 +197,20 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
                 problems.append(f"run[{index}] missing required field '{field}'")
 
         for field in string_run_fields:
-            value = run.get(field)
-            if value is not None and (not isinstance(value, str) or not value.strip()):
+            if field not in run:
+                continue
+            value = run[field]
+            if not isinstance(value, str) or not value.strip():
                 problems.append(f"run[{index}] field '{field}' must be a non-empty string")
 
         run_id = run.get("run_id")
-        if isinstance(run_id, str) and run_id:
+        if isinstance(run_id, str) and run_id.strip():
             if run_id in seen_run_ids:
                 problems.append(f"duplicate run_id '{run_id}'")
             seen_run_ids.add(run_id)
 
-        seed = run.get("seed")
-        if seed is not None:
+        if "seed" in run:
+            seed = run["seed"]
             if (
                 isinstance(seed, bool)
                 or not isinstance(seed, (int, str))
@@ -205,12 +220,10 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
             else:
                 seed_types.add(type(seed))
 
-        status = run.get("status")
-        if status is not None and status not in {"completed", "failed", "running"}:
+        if "status" in run and run["status"] not in {"completed", "failed", "running"}:
             problems.append(f"run[{index}] field 'status' must be completed, failed, or running")
 
-        value = run.get("metric_value")
-        if value is not None and not _is_finite_number(value):
+        if "metric_value" in run and not _is_finite_number(run["metric_value"]):
             problems.append(f"run[{index}] field 'metric_value' must be a finite number")
 
     if len(seed_types) > 1:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trace-ml-verifier"
-version = "1.1.0"
+version = "1.1.1"
 description = "Deterministic validation for ML experiment metrics, baselines, and run metadata"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -1,8 +1,11 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _write_inputs(tmp_path):
@@ -165,6 +168,34 @@ def test_cli_require_supported_uses_machine_readable_exit_codes(tmp_path):
     assert insufficient.returncode == 2
 
 
+@pytest.mark.parametrize(
+    ("claim_name", "runs_name"),
+    [
+        ("claim.json", "runs.json"),
+        ("comparison-claim.json", "comparison-runs.json"),
+    ],
+)
+def test_cli_bundled_examples_are_runnable(claim_name, runs_name):
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "trace_ml.cli",
+            "verify",
+            "--claim",
+            str(ROOT / "examples" / claim_name),
+            "--runs",
+            str(ROOT / "examples" / runs_name),
+            "--require-supported",
+            "--compact",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout)["verdict"] == "supported"
+
+
 def test_cli_reports_version():
     completed = subprocess.run(
         [sys.executable, "-m", "trace_ml.cli", "--version"],
@@ -172,4 +203,4 @@ def test_cli_reports_version():
         capture_output=True,
         text=True,
     )
-    assert completed.stdout.strip() == "TRACE-ML 1.1.0"
+    assert completed.stdout.strip() == "TRACE-ML 1.1.1"

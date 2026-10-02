@@ -27,7 +27,7 @@ git clone https://github.com/ShauryaMallampati/trace-ml.git
 cd trace-ml
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e .
+python -m pip install .
 trace-ml verify --claim examples/claim.json --runs examples/runs.json
 ```
 
