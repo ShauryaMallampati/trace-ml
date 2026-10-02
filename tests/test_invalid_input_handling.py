@@ -1,3 +1,5 @@
+import pytest
+
 from trace_ml.verification.verify_claim import verify
 
 BASE_CLAIM = {
@@ -75,3 +77,61 @@ def test_unknown_run_status_is_insufficient_evidence():
     run = dict(BASE_RUN, status="done")
     result = verify(dict(BASE_CLAIM), [run])
     assert result["verdict"] == "insufficient_evidence"
+
+
+def test_null_claimed_value_is_insufficient_evidence():
+    claim = dict(BASE_CLAIM, claimed_value=None)
+    result = verify(claim, [dict(BASE_RUN)])
+    assert result["verdict"] == "insufficient_evidence"
+    assert "claimed_value" in result["rationale"]
+
+
+def test_missing_claimed_aggregation_is_insufficient_evidence():
+    claim = dict(BASE_CLAIM)
+    del claim["claimed_aggregation"]
+    result = verify(claim, [dict(BASE_RUN)])
+    assert result["verdict"] == "insufficient_evidence"
+    assert "claimed_aggregation" in result["rationale"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "run_id",
+        "dataset",
+        "method",
+        "seed",
+        "metric_name",
+        "metric_split",
+        "metric_value",
+        "status",
+    ],
+)
+def test_null_required_run_fields_are_insufficient_evidence(field):
+    run = dict(BASE_RUN)
+    run[field] = None
+    result = verify(dict(BASE_CLAIM), [run])
+    assert result["verdict"] == "insufficient_evidence"
+    assert field in result["rationale"]
+
+
+@pytest.mark.parametrize("field", ["claimed_low_value", "claimed_high_value"])
+def test_range_requires_non_null_bounds(field):
+    claim = {
+        **BASE_CLAIM,
+        "claimed_aggregation": "range",
+        "claimed_value": None,
+        "claimed_low_value": 0.8,
+        "claimed_high_value": 0.8,
+    }
+    claim[field] = None
+    result = verify(claim, [dict(BASE_RUN)])
+    assert result["verdict"] == "insufficient_evidence"
+    assert field in result["rationale"]
+
+
+def test_unhashable_run_status_is_insufficient_evidence():
+    run = dict(BASE_RUN, status=["completed"])
+    result = verify(dict(BASE_CLAIM), [run])
+    assert result["verdict"] == "insufficient_evidence"
+    assert "status" in result["rationale"]

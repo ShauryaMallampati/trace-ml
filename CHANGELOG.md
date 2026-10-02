@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 - 2026-10-01
+
+- Reject missing or null required claim/run fields before semantic verification, so malformed API inputs fail closed as `insufficient_evidence` instead of reaching aggregation or formatting code.
+- Align runtime validation with the published JSON contracts for required aggregation values, range bounds, single-seed IDs, and mean-plus-minus-standard-deviation uncertainty.
+- Exercise the bundled mean and comparison examples through the real CLI in the test suite.
+- Use a normal package install in user quickstarts while keeping editable installs in the development workflow.
+
 ## 1.1.0 - 2026-10-01
 
 - Enforce exact `candidate_run_ids` manifests instead of accepting silently missing or extra evidence.
