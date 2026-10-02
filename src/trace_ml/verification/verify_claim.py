@@ -220,8 +220,12 @@ def _validate_inputs(claim: dict, runs: list) -> list[str]:
             else:
                 seed_types.add(type(seed))
 
-        if "status" in run and run["status"] not in {"completed", "failed", "running"}:
-            problems.append(f"run[{index}] field 'status' must be completed, failed, or running")
+        if "status" in run:
+            status = run["status"]
+            if not isinstance(status, str) or status not in ("completed", "failed", "running"):
+                problems.append(
+                    f"run[{index}] field 'status' must be completed, failed, or running"
+                )
 
         if "metric_value" in run and not _is_finite_number(run["metric_value"]):
             problems.append(f"run[{index}] field 'metric_value' must be a finite number")
