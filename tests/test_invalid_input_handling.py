@@ -130,7 +130,6 @@ def test_range_requires_non_null_bounds(field):
     assert field in result["rationale"]
 
 
-
 def test_unhashable_run_status_is_insufficient_evidence():
     run = dict(BASE_RUN, status=["completed"])
     result = verify(dict(BASE_CLAIM), [run])
